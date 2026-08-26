@@ -1,4 +1,5 @@
-from std.sys import simd_width_of
+from max.algorithm import parallelize
+from std.sys.info import simd_width_of as simdwidthof
 
 
 comptime FPtr = Pointer[Float64, AnyOrigin[mut=True]]
@@ -120,7 +121,7 @@ def _group_char_range(
     char_margin: Float64,
     detect_vertical: Int,
 ):
-    comptime W = simd_width_of[DType.float64]()
+    comptime W = simdwidthof[DType.float64]()
     var i = start
     while i + W <= end:
         var ax0: SIMD[DType.float64, W] = (
@@ -215,7 +216,8 @@ def mpdf_group_chars(
     comptime chunk_size = 16384
     var task_count = (count + chunk_size - 1) // chunk_size
 
-    for task in range(task_count):
+    @parameter
+    def classify_chunk(task: Int):
         var start = task * chunk_size
         var end = min(start + chunk_size, count)
         _group_char_range(
@@ -227,6 +229,8 @@ def mpdf_group_chars(
             char_margin,
             detect_vertical,
         )
+
+    parallelize[classify_chunk](task_count, min(task_count, 8))
 
 
 @export("mpdf_group_lines")

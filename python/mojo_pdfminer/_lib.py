@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ctypes
+from itertools import chain
+from operator import attrgetter
 import os
 import subprocess
 
@@ -97,11 +99,7 @@ def _kind_array(kinds: npt.ArrayLike, n: int) -> np.ndarray:
 
 def boxes(objects) -> np.ndarray:
     return np.fromiter(
-        (
-            value
-            for obj in objects
-            for value in (obj.x0, obj.y0, obj.x1, obj.y1)
-        ),
+        chain.from_iterable(map(attrgetter("bbox"), objects)),
         dtype=np.float64,
         count=len(objects) * 4,
     ).reshape((-1, 4))

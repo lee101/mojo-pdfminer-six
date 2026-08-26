@@ -81,10 +81,10 @@ Measured with `pixi run bench` on an Intel(R) Xeon(R) CPU E5-2697 v4 @
 
 | benchmark | Mojo-backed | pdfminer.six/Python | speedup |
 | --- | ---: | ---: | ---: |
-| `group_objects`, 300k characters | 752.05 ms | 868.37 ms | 1.15x |
-| `group_textlines`, 10k lines | 36.81 ms | 1282.62 ms | 34.85x |
-| initial box distances, 1k boxes | 2.75 ms | 1896.65 ms | 689.63x |
-| `group_textboxes`, 200 boxes | 347.16 ms | 3024.16 ms | 8.71x |
+| `group_objects`, 300k characters | 341.19 ms | 498.15 ms | 1.46x |
+| `group_textlines`, 10k lines | 18.10 ms | 976.28 ms | 53.93x |
+| initial box distances, 1k boxes | 1.07 ms | 1323.01 ms | 1237.57x |
+| `group_textboxes`, 200 boxes | 317.92 ms | 2254.37 ms | 7.09x |
 
 Attribute extraction limits the complete `group_objects` speedup. The
 line-neighbor and pairwise-distance stages have more geometry work per Python
