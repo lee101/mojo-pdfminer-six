@@ -1,20 +1,19 @@
-from std.algorithm import parallelize
 from std.sys import simd_width_of
 
 
-comptime FPtr = UnsafePointer[Float64, AnyOrigin[mut=True]]
-comptime IPtr = UnsafePointer[Int64, AnyOrigin[mut=True]]
-comptime BPtr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
+comptime FPtr = Pointer[Float64, AnyOrigin[mut=True]]
+comptime IPtr = Pointer[Int64, AnyOrigin[mut=True]]
+comptime BPtr = Pointer[UInt8, AnyOrigin[mut=True]]
 
 
 def _box(boxes: FPtr, i: Int, axis: Int) -> Float64:
-    return boxes[i * 4 + axis]
+    return boxes[unsafe_offset=i * 4 + axis]
 
 
 def _find_root(parents: IPtr, i: Int) -> Int:
     var root = i
-    while Int(parents[root]) != root:
-        root = Int(parents[root])
+    while Int(parents[unsafe_offset=root]) != root:
+        root = Int(parents[unsafe_offset=root])
     return root
 
 
@@ -24,15 +23,15 @@ def _unite(parents: IPtr, a: Int, b: Int):
     if ra == rb:
         return
     if ra < rb:
-        parents[rb] = Int64(ra)
+        parents[unsafe_offset=rb] = Int64(ra)
     else:
-        parents[ra] = Int64(rb)
+        parents[unsafe_offset=ra] = Int64(rb)
 
 
 def _line_neighbor(
     boxes: FPtr, kinds: BPtr, i: Int, j: Int, ratio: Float64
 ) -> Bool:
-    if kinds[i] != kinds[j]:
+    if kinds[unsafe_offset=i] != kinds[unsafe_offset=j]:
         return False
     var ax0 = _box(boxes, i, 0)
     var ay0 = _box(boxes, i, 1)
@@ -42,7 +41,7 @@ def _line_neighbor(
     var by0 = _box(boxes, j, 1)
     var bx1 = _box(boxes, j, 2)
     var by1 = _box(boxes, j, 3)
-    if kinds[i] == 0:
+    if kinds[unsafe_offset=i] == 0:
         var d = ratio * (ay1 - ay0)
         if bx1 <= ax0 or ax1 <= bx0 or by1 <= ay0 - d or ay1 + d <= by0:
             return False
@@ -109,7 +108,7 @@ def _group_char_one(
         and vdist < max(ah, bh) * char_margin
     ):
         flags = flags | UInt8(2)
-    relations[i] = flags
+    relations[unsafe_offset=i] = flags
 
 
 def _group_char_range(
@@ -125,29 +124,29 @@ def _group_char_range(
     var i = start
     while i + W <= end:
         var ax0: SIMD[DType.float64, W] = (
-            boxes + i * 4
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset(i * 4)
+        ).unsafe_strided_load[width=W](4)
         var ay0: SIMD[DType.float64, W] = (
-            boxes + i * 4 + 1
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset(i * 4 + 1)
+        ).unsafe_strided_load[width=W](4)
         var ax1: SIMD[DType.float64, W] = (
-            boxes + i * 4 + 2
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset(i * 4 + 2)
+        ).unsafe_strided_load[width=W](4)
         var ay1: SIMD[DType.float64, W] = (
-            boxes + i * 4 + 3
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset(i * 4 + 3)
+        ).unsafe_strided_load[width=W](4)
         var bx0: SIMD[DType.float64, W] = (
-            boxes + (i + 1) * 4
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset((i + 1) * 4)
+        ).unsafe_strided_load[width=W](4)
         var by0: SIMD[DType.float64, W] = (
-            boxes + (i + 1) * 4 + 1
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset((i + 1) * 4 + 1)
+        ).unsafe_strided_load[width=W](4)
         var bx1: SIMD[DType.float64, W] = (
-            boxes + (i + 1) * 4 + 2
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset((i + 1) * 4 + 2)
+        ).unsafe_strided_load[width=W](4)
         var by1: SIMD[DType.float64, W] = (
-            boxes + (i + 1) * 4 + 3
-        ).strided_load[width=W](4)
+            boxes.unsafe_offset((i + 1) * 4 + 3)
+        ).unsafe_strided_load[width=W](4)
         var aw = ax1 - ax0
         var ah = ay1 - ay0
         var bw = bx1 - bx0
@@ -173,7 +172,7 @@ def _group_char_range(
                 & vdist.lt(max(ah, bh) * char_margin)
             )
             flags = flags | (valign.cast[DType.uint8]() * UInt8(2))
-        relations.store(i, flags)
+        relations.unsafe_store(i, flags)
         i += W
     while i < end:
         _group_char_one(
@@ -216,30 +215,18 @@ def mpdf_group_chars(
     comptime chunk_size = 16384
     var task_count = (count + chunk_size - 1) // chunk_size
 
-    @__copy_capture(
-        boxes_addr,
-        relations_addr,
-        count,
-        line_overlap,
-        char_margin,
-        detect_vertical,
-    )
-    def work(task: Int) capturing:
-        var task_boxes = FPtr(unsafe_from_address=boxes_addr)
-        var task_relations = BPtr(unsafe_from_address=relations_addr)
+    for task in range(task_count):
         var start = task * chunk_size
         var end = min(start + chunk_size, count)
         _group_char_range(
-            task_boxes,
-            task_relations,
+            boxes,
+            relations,
             start,
             end,
             line_overlap,
             char_margin,
             detect_vertical,
         )
-
-    parallelize[work](task_count, 4)
 
 
 @export("mpdf_group_lines")
@@ -268,7 +255,7 @@ def mpdf_group_lines(
     var v_prefix = FPtr(unsafe_from_address=v_prefix_addr)
     var parents = IPtr(unsafe_from_address=parents_addr)
     for i in range(n):
-        parents[i] = Int64(i)
+        parents[unsafe_offset=i] = Int64(i)
 
     for i in range(n):
         if (
@@ -283,7 +270,7 @@ def mpdf_group_lines(
         var low_axis = 1
         var high_axis = 3
         var size = _box(boxes, i, 3) - _box(boxes, i, 1)
-        if kinds[i] != 0:
+        if kinds[unsafe_offset=i] != 0:
             order = v_order
             prefix = v_prefix
             low_axis = 0
@@ -297,7 +284,7 @@ def mpdf_group_lines(
         var hi = n
         while lo < hi:
             var mid = (lo + hi) // 2
-            if prefix[mid] <= query_low:
+            if prefix[unsafe_offset=mid] <= query_low:
                 lo = mid + 1
             else:
                 hi = mid
@@ -307,14 +294,14 @@ def mpdf_group_lines(
         hi = n
         while lo < hi:
             var mid = (lo + hi) // 2
-            var j = Int(order[mid])
+            var j = Int(order[unsafe_offset=mid])
             if _box(boxes, j, low_axis) < query_high:
                 lo = mid + 1
             else:
                 hi = mid
         var end = lo
         for pos in range(begin, end):
-            var j = Int(order[pos])
+            var j = Int(order[unsafe_offset=pos])
             if (
                 _box(boxes, j, 2) <= page_x0
                 or page_x1 <= _box(boxes, j, 0)
@@ -326,7 +313,7 @@ def mpdf_group_lines(
                 _unite(parents, i, j)
 
     for i in range(n):
-        parents[i] = Int64(_find_root(parents, i))
+        parents[unsafe_offset=i] = Int64(_find_root(parents, i))
 
 
 @export("mpdf_box_distances")
@@ -350,7 +337,7 @@ def mpdf_box_distances(
             var bx1 = _box(boxes, j, 2)
             var by1 = _box(boxes, j, 3)
             var area_b = (bx1 - bx0) * (by1 - by0)
-            distances[k] = (
+            distances[unsafe_offset=k] = (
                 (max(ax1, bx1) - min(ax0, bx0))
                 * (max(ay1, by1) - min(ay0, by0))
                 - area_a
