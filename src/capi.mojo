@@ -1,4 +1,3 @@
-from max.algorithm import parallelize
 from std.sys.info import simd_width_of as simdwidthof
 
 
@@ -216,8 +215,7 @@ def mpdf_group_chars(
     comptime chunk_size = 16384
     var task_count = (count + chunk_size - 1) // chunk_size
 
-    @parameter
-    def classify_chunk(task: Int):
+    for task in range(task_count):
         var start = task * chunk_size
         var end = min(start + chunk_size, count)
         _group_char_range(
@@ -229,8 +227,6 @@ def mpdf_group_chars(
             char_margin,
             detect_vertical,
         )
-
-    parallelize[classify_chunk](task_count, min(task_count, 8))
 
 
 @export("mpdf_group_lines")
